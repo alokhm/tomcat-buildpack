@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
+
+shopt -s dotglob
+set -e
+
+# ------------------------------------------------------------------------------------------------
+#        compile_build_dir: /tmp/staged/app
+#        compile_cache_dir: /tmp/cache
+#        compile_buildpack_bin: /tmp/buildpacks/{project-name}/bin
+#        compile_buildpack_dir: /tmp/buildpacks/{project-name}
+#        pwd: /tmp/staged
+#------------------------------------------------------------------------------------------------------
+compile_build_dir=$1
+compile_cache_dir=$2
+compile_buildpack_dir=$(cd $(dirname $0) && cd .. && pwd)
+compile_buildpack_bin=$compile_buildpack_dir/bin
+
+echo "pwd: $(pwd)"
+echo "compile_build_dir: $compile_build_dir"
+echo "compile_cache_dir: $compile_cache_dir"
+echo "compile_buildpack_bin: $compile_buildpack_bin"
+echo "compile_buildpack_dir: $compile_buildpack_dir"
+
+# ----------------------httpd download kept along with buildpack--------------------------------------------------------------------------
+compile_httpd_tgz="$compile_buildpack_dir/vendor/httpd-2.2.29.tar.gz"
+compile_apr_tgz="$compile_buildpack_dir/vendor/apr-1.5.1.tar.gz"
+compile_apr_util_tgz="$compile_buildpack_dir/vendor/apr-util-1.5.4.tar.gz"
+compile_tomcat_tgz="$compile_buildpack_dir/vendor/apache-tomcat-7.0.57.tar.gz"
+
+# ------------------------------------------------------------------------------------------------
+
+if [ -d "$compile_cache_dir/public" ]; then
+  cd $compile_cache_dir/public
+  echo "----> list of files and directory:$(ls -l)" 
+fi
+
+cd $compile_build_dir
+
+
+
+
+
+
+# -----------------------------------creating public directory under cache directory-------------------------------------------------------------
+mkdir -p $compile_cache_dir/public
+mv * $compile_cache_dir/public
+mv $compile_cache_dir/public .
+[[ -f public/Procfile ]] && mv public/Procfile .
+
+# ------------------------jdk8------------------------------------------------------------------------
+#mkdir -p $compile_build_dir/java
+#cd $compile_build_dir/java
+wget --no-check-certificate --no-cookies --header "Cookie:oraclelicense=accept-securebackup-cookie" http://download.oracle.com/otn-pub/java/jdk/8u25-b17/jdk-8u25-linux-x64.tar.gz
+tar zxvf jdk-8u25-linux-x64.tar.gz
+export JAVA_HOME=$compile_build_dir/jdk1.8.0_25
+echo "----> present Directory:$(pwd)" 
+echo "----> list of files and directory:$(ls -l)" 
+export PATH=$JAVA_HOME/bin:$PATH
+chmod -R uog+rx $compile_build_dir/jdk1.8.0_25
+# ------------------------jdk8 end------------------------------------------------------------------------
+
+#cd $compile_build_dir
+tar xzf $compile_httpd_tgz
+
+# -----------------------------------httpd configure,compile and install-------------------------------------------------------------
+cd $compile_build_dir/httpd-2.2.29
+
+apache2_build_dir=$compile_build_dir/apache2
+#configure
+./configure --prefix=$apache2_build_dir \
+--enable-mods-shared=all \
+--enable-http \
+--enable-deflate \
+--enable-expires \
+--enable-slotmem-shm \
+--enable-headers \
+--enable-rewrite \
+--enable-proxy \
+--enable-proxy-balancer \
+--enable-proxy-http \
+--enable-proxy-fcgi \
+--enable-mime-magic \
+--enable-log-debug \
+--with-mpm=event \
+--with-included-apr 
+echo "config completed to:"$apache2_build_dir
+
+#compile the source
+make
+echo "apache has been compiled successfully..."
+
+#install
+make install
+echo "apache has been installed successfully..."
+
+chmod -R uog+rx $compile_build_dir/apache2
+
+cd ..
+
+#copying config file from buildpack to apache2 directory also to public directory
+cp -f $compile_buildpack_dir/conf/httpd.conf apache2/conf/httpd.conf
+[[ -f public/httpd.conf ]] && mv public/httpd.conf apache2/conf/httpd.conf
+
+cp -R $compile_buildpack_dir/logs apache2
+# ------------------------------------------------------------------------------------------------
+
+cd  $compile_build_dir/apache2
+
+#chmod -R 777 $compile_build_dir/apache2
+echo "----> list of files and directory in apache2:$(ls -l)"
+cd logs
+echo "----> list of files and directory in apache2/logs:$(ls -l)"
+cd ..
+
+cd ..
+
+echo "----> list of files and directory:$(ls -l)" 
+
+# -------------------------------copying build pack tomcat to compile build directory-----------------------------------------------------------------
+#cp -R $compile_buildpack_dir/tomcat tomcat
+#chmod -R uog+rx $compile_build_dir/tomcat
+#cd tomcat
+#echo "----> list of files and directory:$(ls -l)" 
+#cd ..
+#.........................Extracting tomcat from buildpack.......................................
+cd $compile_build_dir
+tar xzf $compile_tomcat_tgz
+tomcat_build_dir=$compile_build_dir/apache-tomcat-7.0.57
+chmod -R uog+rx $tomcat_build_dir
+cd $tomcat_build_dir
+echo "----> list of files and directory:$(ls -l)" 
+cd ..
+# -------------------------------copying build pack tomcat end-----------------------------------------------------------------
+cp $compile_buildpack_bin/boot.sh .
+
+# -------------------------------copying webagent conf -----------------------------------------------------------------
+cp $compile_buildpack_dir/conf/webagent.conf .
+echo "pwd: $(pwd)"
+echo "----> list of files and directory:$(ls -l)" 
